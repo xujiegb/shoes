@@ -15,180 +15,306 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+
+    permissions:
+      contents: read
+
     strategy:
       fail-fast: false
+
       matrix:
         include:
-          # Linux builds (using cross for cross-compilation)
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            use_cross: false
-            binary_name: shoes
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            use_cross: true
-            binary_name: shoes
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            use_cross: true
-            binary_name: shoes
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            use_cross: true
+            os: ubuntu-26.04
+            builder: cross
             binary_name: shoes
 
-          # macOS builds (native compilation)
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-26.04
+            builder: musl-docker
+            musl_image: x86_64-musl
+            binary_name: shoes
+
+          - target: i686-unknown-linux-gnu
+            os: ubuntu-26.04
+            builder: cross
+            binary_name: shoes
+
+          - target: i686-unknown-linux-musl
+            os: ubuntu-26.04
+            builder: musl-docker
+            musl_image: i686-musl
+            binary_name: shoes
+
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-26.04
+            builder: cross
+            binary_name: shoes
+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-26.04
+            builder: musl-docker
+            musl_image: aarch64-musl
+            binary_name: shoes
+
+          - target: armv7-unknown-linux-gnueabihf
+            os: ubuntu-26.04
+            builder: cross
+            binary_name: shoes
+
+          - target: armv7-unknown-linux-musleabihf
+            os: ubuntu-26.04
+            builder: musl-docker
+            musl_image: armv7-musleabihf
+            binary_name: shoes
+
+          - target: powerpc64le-unknown-linux-gnu
+            os: ubuntu-26.04
+            builder: cross
+            binary_name: shoes
+
+          - target: powerpc64le-unknown-linux-musl
+            os: ubuntu-26.04
+            builder: musl-docker
+            musl_image: powerpc64le-musl
+            binary_name: shoes
+
+          - target: s390x-unknown-linux-gnu
+            os: ubuntu-26.04
+            builder: cross
+            binary_name: shoes
+
+          - target: s390x-unknown-linux-musl
+            os: ubuntu-26.04
+            builder: musl-docker
+            musl_image: s390x-musl
+            binary_name: shoes
+
+          - target: loongarch64-unknown-linux-gnu
+            os: ubuntu-26.04
+            builder: cross
+            binary_name: shoes
+
+          - target: loongarch64-unknown-linux-musl
+            os: ubuntu-26.04
+            builder: musl-docker
+            musl_image: loongarch64-musl
+            binary_name: shoes
+
+          - target: mips64el-unknown-linux-gnuabi64
+            os: ubuntu-26.04
+            builder: cross-build-std
+            binary_name: shoes
+
+          - target: mips64el-unknown-linux-muslabi64
+            os: ubuntu-26.04
+            builder: musl-docker
+            musl_image: mips64el-muslabi64
+            binary_name: shoes
+
+          - target: riscv64gc-unknown-linux-gnu
+            os: ubuntu-26.04
+            builder: cross
+            binary_name: shoes
+
+          - target: riscv64gc-unknown-linux-musl
+            os: ubuntu-26.04
+            builder: musl-docker
+            musl_image: riscv64gc-musl
+            binary_name: shoes
+
           - target: x86_64-apple-darwin
             os: macos-latest
-            use_cross: false
+            builder: cargo
             binary_name: shoes
+
           - target: aarch64-apple-darwin
             os: macos-latest
-            use_cross: false
+            builder: cargo
             binary_name: shoes
 
-          # Windows builds
-          # TODO: enable when working
-          # - target: x86_64-pc-windows-msvc
-          #   os: windows-latest
-          #   use_cross: false
-          #   binary_name: shoes.exe
-          # - target: aarch64-pc-windows-msvc
-          #   os: windows-latest
-          #   use_cross: false
-          #   binary_name: shoes.exe
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Install Rust
+      - name: Install stable Rust
+        if: matrix.builder == 'cross' || matrix.builder == 'cargo'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install system dependencies
-        if: matrix.use_cross == true
-        run: |
-          sudo apt-get update
-          case "${{ matrix.target }}" in
-            "aarch64-unknown-linux-gnu")
-              sudo apt-get install -y gcc-aarch64-linux-gnu
-              ;;
-            "aarch64-unknown-linux-musl")
-              sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
-              ;;
-            "x86_64-unknown-linux-musl")
-              sudo apt-get install -y musl-tools
-              ;;
-          esac
-
-      - name: Install cross-compilation tool
-        if: matrix.use_cross == true
-        run: |
-          cargo install cross
+      - name: Install nightly Rust
+        if: matrix.builder == 'cross-build-std'
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
 
       - name: Setup cache
+        if: matrix.builder != 'musl-docker'
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
-      - name: Build binary (using cross)
-        if: matrix.use_cross == true
-        run: cross build --release --target ${{ matrix.target }}
-
-      - name: Build binary (native)
-        if: matrix.use_cross == false
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Verify binary exists
+      - name: Install cross
+        if: matrix.builder == 'cross' || matrix.builder == 'cross-build-std'
         run: |
-          if [ -f "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" ]; then
-            echo "Binary found: target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
-            ls -la "target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
-            
-            # Show file type and architecture
-            file "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" || true
-            
-            # Test the binary can be executed (for native builds only)
-            if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ]]; then
-              echo "Testing binary execution..."
-              "./target/${{ matrix.target }}/release/${{ matrix.binary_name }}" --help || echo "Binary test failed, but file exists"
-            fi
-          else
-            echo "Binary not found!"
-            echo "Contents of release directory:"
-            ls -la "target/${{ matrix.target }}/release/" || echo "Release directory doesn't exist"
+          cargo install cross \
+            --git https://github.com/cross-rs/cross \
+            --locked
+
+      - name: Configure MIPS64EL GNU
+        if: matrix.builder == 'cross-build-std'
+        run: |
+          cat > Cross.ci.toml <<'EOF'
+          [build.env]
+          passthrough = ["CARGO_PROFILE_RELEASE_LTO"]
+
+          [target.mips64el-unknown-linux-gnuabi64]
+          image = "ghcr.io/cross-rs/mips64el-unknown-linux-gnuabi64:main"
+          build-std = ["std", "panic_abort"]
+          EOF
+
+      - name: Build with cross
+        if: matrix.builder == 'cross'
+        run: |
+          cross build \
+            --release \
+            --bin shoes \
+            --target ${{ matrix.target }}
+
+      - name: Build MIPS64EL GNU
+        if: matrix.builder == 'cross-build-std'
+        env:
+          RUSTUP_TOOLCHAIN: nightly
+          CROSS_CONFIG: Cross.ci.toml
+          CARGO_PROFILE_RELEASE_LTO: "off"
+        run: |
+          cross build \
+            --release \
+            --bin shoes \
+            --target ${{ matrix.target }}
+
+      - name: Build musl
+        if: matrix.builder == 'musl-docker'
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/rust-cross/rust-musl-cross:${{ matrix.musl_image }}"
+
+          docker pull "$IMAGE"
+
+          docker run --rm \
+            -v "$PWD:/home/rust/src" \
+            -w /home/rust/src \
+            -e CARGO_TERM_COLOR=always \
+            "$IMAGE" \
+            bash -lc '
+              set -e
+
+              TARGET="${{ matrix.target }}"
+
+              TARGET_UPPER="$(
+                printf "%s" "$TARGET" |
+                tr "[:lower:]" "[:upper:]" |
+                tr ".-" "__"
+              )"
+
+              RUSTFLAGS_VAR="CARGO_TARGET_${TARGET_UPPER}_RUSTFLAGS"
+              CURRENT_RUSTFLAGS="${!RUSTFLAGS_VAR:-}"
+
+              export "$RUSTFLAGS_VAR=${CURRENT_RUSTFLAGS:+$CURRENT_RUSTFLAGS }-C link-arg=-lgcc"
+
+              case "$TARGET" in
+                mips64el-unknown-linux-muslabi64|s390x-unknown-linux-musl)
+                  export CARGO_PROFILE_RELEASE_LTO=off
+                  ;;
+              esac
+
+              echo "Target: $TARGET"
+              echo "$RUSTFLAGS_VAR=${!RUSTFLAGS_VAR}"
+              echo "Release LTO: ${CARGO_PROFILE_RELEASE_LTO:-fat}"
+
+              cargo build \
+                --release \
+                --bin shoes \
+                --target "$TARGET"
+            '
+
+          sudo chown -R "$(id -u):$(id -g)" target
+
+      - name: Build native
+        if: matrix.builder == 'cargo'
+        run: |
+          cargo build \
+            --release \
+            --bin shoes \
+            --target ${{ matrix.target }}
+
+      - name: Verify binary
+        shell: bash
+        run: |
+          BINARY="target/${{ matrix.target }}/release/${{ matrix.binary_name }}"
+
+          if [ ! -f "$BINARY" ]; then
+            echo "Binary not found:"
+            echo "$BINARY"
+
+            echo "Release directory:"
+            ls -la "target/${{ matrix.target }}/release/" || true
+
             exit 1
           fi
 
-      - name: Prepare binary (Unix)
-        if: "!contains(matrix.os, 'windows')"
-        run: |
-          mkdir -p artifacts
-          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "artifacts/${{ matrix.binary_name }}"
-          
-          # Strip the binary to reduce size
-          if command -v strip &> /dev/null; then
-            strip "artifacts/${{ matrix.binary_name }}" || echo "Strip failed, continuing..."
-          fi
-          
-          # Create tarball
-          cd artifacts
-          tar -czf ${{ github.event.repository.name }}-${{ matrix.target }}.tar.gz "${{ matrix.binary_name }}"
-          
-          # Debug: show what files were created
-          echo "Contents of artifacts directory:"
-          ls -la
-          
-          # Verify the tarball was created
-          if [ -f "${{ github.event.repository.name }}-${{ matrix.target }}.tar.gz" ]; then
-            echo "Tarball created successfully: ${{ github.event.repository.name }}-${{ matrix.target }}.tar.gz"
-          else
-            echo "ERROR: Tarball was not created!"
-            exit 1
-          fi
-          
-          rm "${{ matrix.binary_name }}"
+          echo "Binary found:"
+          ls -lh "$BINARY"
 
-      - name: Prepare binary (Windows)
-        if: contains(matrix.os, 'windows')
+          echo "Binary type:"
+          file "$BINARY" || true
+
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-gnu|x86_64-unknown-linux-musl)
+              "$BINARY" --help || true
+              ;;
+            aarch64-apple-darwin)
+              "$BINARY" --help || true
+              ;;
+          esac
+
+      - name: Prepare binary
         shell: bash
         run: |
           mkdir -p artifacts
-          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "artifacts/${{ matrix.binary_name }}"
+
+          cp \
+            "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" \
+            "artifacts/${{ matrix.binary_name }}"
+
           cd artifacts
-          7z a ${{ github.event.repository.name }}-${{ matrix.target }}.zip "${{ matrix.binary_name }}"
 
-      - name: Verify artifacts before upload
-        run: |
-          echo "Checking for artifacts to upload..."
-          ls -la artifacts/ || echo "artifacts directory not found"
-          
-          # Check for expected file patterns
-          if ls artifacts/*.tar.gz 1> /dev/null 2>&1; then
-            echo "Found .tar.gz files:"
-            ls -la artifacts/*.tar.gz
-          fi
-          
-          if ls artifacts/*.zip 1> /dev/null 2>&1; then
-            echo "Found .zip files:"
-            ls -la artifacts/*.zip
-          fi
+          tar \
+            -czf "${{ github.event.repository.name }}-${{ matrix.target }}.tar.gz" \
+            "${{ matrix.binary_name }}"
 
-      - name: Upload artifacts
+          rm "${{ matrix.binary_name }}"
+
+          echo "Artifacts:"
+          ls -lh
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ github.event.repository.name }}-${{ matrix.target }}
-          path: |
-            artifacts/*.tar.gz
-            artifacts/*.zip
+          path: artifacts/*.tar.gz
           if-no-files-found: error
 
   release:
     name: Create Release
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+
+    permissions:
+      contents: write
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -197,14 +323,23 @@ jobs:
 
       - name: List artifacts
         run: |
-          echo "Downloaded artifacts:"
-          find artifacts -type f -name "*.tar.gz" -o -name "*.zip" | sort
+          find artifacts \
+            -type f \
+            -name "*.tar.gz" \
+            -print \
+            | sort
 
       - name: Flatten artifacts
         run: |
           mkdir -p release-artifacts
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release-artifacts/ \;
-          ls -la release-artifacts/
+
+          find artifacts \
+            -type f \
+            -name "*.tar.gz" \
+            -exec cp {} release-artifacts/ \;
+
+          echo "Release artifacts:"
+          ls -lah release-artifacts/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
